@@ -5,6 +5,7 @@ var events = require('events')
 var randombytes = require('randombytes')
 var util = require('util')
 var Buffer = require('safe-buffer').Buffer
+var uuidv4 = require('uuid/v4')
 
 var K = 20
 var MAX_CONCURRENCY = 16
@@ -184,8 +185,7 @@ RPC.prototype.clear = function () {
 RPC.prototype.broadcast = function (message, t) {
   const peers = this.nodes.toArray()
 
-  // FIXME use UUID
-  if (!t) t = Math.floor(Math.random() * 100000000)
+  if (!t) t = uuidv4()
   for (let i = 0; i < K && i < peers.length; ++i) {
     const rnd = Math.floor(Math.random() * peers.length)
     const peer = peers[rnd]

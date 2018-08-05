@@ -124,6 +124,7 @@ function RPC (opts) {
     } else if (type === 'q') {
       self.emit('query', message, rinfo)
     } else if (type === 'n') {
+      message.t = message.t.toString()
       if (self._msgCache.get(message.t)) {
         return
       }

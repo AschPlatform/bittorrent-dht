@@ -675,6 +675,12 @@ DHT.prototype._bootstrap = function (populate) {
   }
 }
 
+DHT.prototype.getRandomNode = function () {
+  const nodes = this.nodes.toArray()
+  const rnd = Math.floor(Math.random() * nodes.length)
+  return nodes[rnd]
+}
+
 DHT.prototype._closest = function (target, message, onmessage, cb) {
   var self = this
 

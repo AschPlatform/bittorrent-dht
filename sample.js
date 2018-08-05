@@ -27,7 +27,7 @@ function main() {
   let i = 0
   if (isBroadcast) {
     setInterval(() => {
-      dht.broadcast({topic: 'hello', counter: ++i})
+      dht.broadcast({topic: 'hello', counter: ++i, args: [1000, Buffer.from("abcd")]})
     }, 2000)
   }
 }
