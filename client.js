@@ -1,5 +1,6 @@
 module.exports = DHT
 
+var krpc = require('./rpc')
 var bencode = require('bencode')
 var Buffer = require('safe-buffer').Buffer
 var debug = require('debug')('bittorrent-dht')
@@ -7,7 +8,6 @@ var equals = require('buffer-equals')
 var EventEmitter = require('events').EventEmitter
 var inherits = require('inherits')
 var KBucket = require('k-bucket')
-var krpc = require('k-rpc')
 var LRU = require('lru')
 var randombytes = require('randombytes')
 var simpleSha1 = require('simple-sha1')
@@ -37,6 +37,7 @@ function DHT (opts) {
   this._hashLength = this._hash(Buffer.from('')).length
   this._rpc = opts.krpc || krpc(Object.assign({idLength: this._hashLength}, opts))
   this._rpc.on('query', onquery)
+  this._rpc.on('broadcast', onbroadcast)
   this._rpc.on('node', onnode)
   this._rpc.on('warning', onwarning)
   this._rpc.on('error', onerror)
@@ -95,6 +96,10 @@ function DHT (opts) {
 
   function onquery (query, peer) {
     self._onquery(query, peer)
+  }
+
+  function onbroadcast(message, peer) {
+    self.emit('broadcast', message, peer)
   }
 
   function rotateSecrets () {
@@ -475,6 +480,10 @@ DHT.prototype.lookup = function (infoHash, cb) {
   }
 
   return function abort () { aborted = true }
+}
+
+DHT.prototype.broadcast = function (message) {
+  this._rpc.broadcast(message)
 }
 
 DHT.prototype.address = function () {
