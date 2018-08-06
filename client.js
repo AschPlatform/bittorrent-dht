@@ -42,6 +42,7 @@ function DHT (opts) {
   this._rpc.on('warning', onwarning)
   this._rpc.on('error', onerror)
   this._rpc.on('listening', onlistening)
+  this._rpc.on('remove', onremove)
   this._rotateSecrets()
   this._verify = opts.verify || null
   this._host = opts.host || null
@@ -120,6 +121,10 @@ function DHT (opts) {
 
   function onnode (node) {
     self.emit('node', node)
+  }
+
+  function onremove(id) {
+    self.emit('remove', id.toString('hex'))
   }
 }
 
@@ -222,7 +227,7 @@ DHT.prototype.addNode = function (node) {
 }
 
 DHT.prototype.removeNode = function (id) {
-  this._rpc.nodes.remove(toBuffer(id))
+  this._rpc.removeNode(toBuffer(id))
 }
 
 DHT.prototype._sendPing = function (node, cb) {

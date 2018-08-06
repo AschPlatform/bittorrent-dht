@@ -24,6 +24,10 @@ function main() {
     console.log('receive broadcast from peer %s:%d', peer.host, peer.port, msg)
   })
 
+  dht.on('remove', (id) => {
+    console.log('node disconnected:', id)
+  })
+
   let i = 0
   if (isBroadcast) {
     setInterval(() => {

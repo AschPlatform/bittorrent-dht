@@ -97,6 +97,11 @@ function RPC (opts) {
 
 util.inherits(RPC, events.EventEmitter)
 
+RPC.prototype.removeNode = function (id) {
+  this.nodes.remove(id)
+  this.emit('remove', id)
+}
+
 RPC.prototype.response = function (node, query, response, nodes, cb) {
   if (typeof nodes === 'function') {
     cb = nodes
@@ -176,7 +181,7 @@ RPC.prototype.clear = function () {
   function onping (older, newer) {
     self.emit('ping', older, function swap (deadNode) {
       if (!deadNode) return
-      if (deadNode.id) self.nodes.remove(deadNode.id)
+      if (deadNode.id) self.removeNode(deadNode.id)
       self._addNode(newer)
     })
   }
@@ -279,7 +284,7 @@ RPC.prototype._closest = function (target, message, background, visit, cb) {
 
     if (peer && peer.id && self.nodes.get(peer.id)) {
       if (err && (err.code === 'EUNEXPECTEDNODE' || err.code === 'ETIMEDOUT')) {
-        self.nodes.remove(peer.id)
+        self.removeNode(peer.id)
       }
     }
 
