@@ -72,9 +72,10 @@ function RPC (opts) {
   }
 
   function onbroadcast (message, peer) {
-    self.emit('broadcast', message.m, peer)
-    // FIXME stop to broadcast invalid meesages
-    self.broadcast(message.m, message.t)
+    self.emit('broadcast', message, peer)
+    if (message.recursive) {
+      self.broadcast(message)
+    }
   }
 
   function addNode (data, peer) {
@@ -187,14 +188,14 @@ RPC.prototype.clear = function () {
   }
 }
 
-RPC.prototype.broadcast = function (message, t) {
+RPC.prototype.broadcast = function (message) {
   const peers = this.nodes.toArray()
 
-  if (!t) t = uuidv4()
+  if (!message.mid) message.mid = uuidv4()
   for (let i = 0; i < K && i < peers.length; ++i) {
     const rnd = Math.floor(Math.random() * peers.length)
     const peer = peers[rnd]
-    this.socket.notify(peer, message, t)
+    this.socket.notify(peer, message)
   }
 }
 
