@@ -100,7 +100,7 @@ function DHT (opts) {
   }
 
   function onbroadcast(message, peer) {
-    self.emit('broadcast', message, peer)
+    self.emit('broadcast', message, { host: peer.address, port: peer.port })
   }
 
   function rotateSecrets () {

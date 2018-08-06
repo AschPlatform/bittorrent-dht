@@ -21,7 +21,7 @@ function main() {
   })
 
   dht.on('broadcast', (msg, peer) => {
-    console.log('receive broadcast from peer %s:%d', peer.host, peer.port, msg)
+    console.log('receive broadcast from peer %s:%d', peer.address, peer.port, msg, peer)
   })
 
   dht.on('remove', (id) => {
