@@ -125,11 +125,13 @@ function RPC (opts) {
       self.emit('query', message, rinfo)
     } else if (type === 'n') {
       const m = message.m
-      const mid = m.mid.toString()
-      if (self._msgCache.get(mid)) {
+      if (Buffer.isBuffer(m.mid)) {
+        m.mid = m.mid.toString()
+      }
+      if (self._msgCache.get(m.mid)) {
         return
       }
-      self._msgCache.set(mid, 1)
+      self._msgCache.set(m.mid, 1)
       self.emit('broadcast', m, rinfo)
     } else {
       self.emit('warning', new Error('Unknown type: ' + type))
@@ -158,7 +160,6 @@ RPC.prototype.send = function (peer, message, cb) {
 
 RPC.prototype.notify = function (peer, message) {
   if (!this.isIP(peer.host)) return this._resolveAndNotify(peer, message, noop)
-
   this._msgCache.set(message.mid, 1)
   this.send(peer, {y: 'n', m: message})
 }
