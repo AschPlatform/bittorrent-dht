@@ -22,7 +22,7 @@ function RPC (opts) {
 
   var self = this
 
-  this.timeout = opts.timeout || 2000
+  this.timeout = opts.timeout || 4000
   this.inflight = 0
   this.destroyed = false
   this.isIP = opts.isIP || isIP
