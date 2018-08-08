@@ -158,10 +158,10 @@ RPC.prototype.send = function (peer, message, cb) {
   this.socket.send(buf, 0, buf.length, peer.port, peer.address || peer.host, cb || noop)
 }
 
-RPC.prototype.notify = function (peer, message) {
-  if (!this.isIP(peer.host)) return this._resolveAndNotify(peer, message, noop)
+RPC.prototype.notify = function (peer, message, cb) {
+  if (!this.isIP(peer.host)) return this._resolveAndNotify(peer, message, cb)
   this._msgCache.set(message.mid, 1)
-  this.send(peer, {y: 'n', m: message})
+  this.send(peer, {y: 'n', m: message}, cb)
 }
 
 // bind([port], [address], [callback])

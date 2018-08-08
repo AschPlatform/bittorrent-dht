@@ -123,8 +123,8 @@ function DHT (opts) {
     self.emit('node', node)
   }
 
-  function onremove(id) {
-    self.emit('remove', id.toString('hex'))
+  function onremove(id, reason) {
+    self.emit('remove', id.toString('hex'), reason)
   }
 }
 

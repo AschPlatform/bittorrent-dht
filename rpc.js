@@ -72,6 +72,7 @@ function RPC (opts) {
   }
 
   function onbroadcast (message, peer) {
+    addNode(message, peer)
     self.emit('broadcast', message, peer)
     if (message.recursive) {
       self.broadcast(message)
@@ -98,9 +99,9 @@ function RPC (opts) {
 
 util.inherits(RPC, events.EventEmitter)
 
-RPC.prototype.removeNode = function (id) {
+RPC.prototype.removeNode = function (id, reason) {
   this.nodes.remove(id)
-  this.emit('remove', id)
+  this.emit('remove', id, reason)
 }
 
 RPC.prototype.response = function (node, query, response, nodes, cb) {
@@ -182,7 +183,7 @@ RPC.prototype.clear = function () {
   function onping (older, newer) {
     self.emit('ping', older, function swap (deadNode) {
       if (!deadNode) return
-      if (deadNode.id) self.removeNode(deadNode.id)
+      if (deadNode.id) self.removeNode(deadNode.id, new Error('k-bucket ping dead node'))
       self._addNode(newer)
     })
   }
@@ -190,8 +191,8 @@ RPC.prototype.clear = function () {
 
 RPC.prototype.broadcast = function (message) {
   const peers = this.nodes.toArray()
-
   if (!message.mid) message.mid = uuidv4()
+  message.id = this.id
   for (let i = 0; i < K && i < peers.length; ++i) {
     const rnd = Math.floor(Math.random() * peers.length)
     const peer = peers[rnd]
@@ -285,7 +286,7 @@ RPC.prototype._closest = function (target, message, background, visit, cb) {
 
     if (peer && peer.id && self.nodes.get(peer.id)) {
       if (err && (err.code === 'EUNEXPECTEDNODE' || err.code === 'ETIMEDOUT')) {
-        self.removeNode(peer.id)
+        self.removeNode(peer.id, err)
       }
     }
 
