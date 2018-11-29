@@ -189,14 +189,26 @@ RPC.prototype.clear = function () {
   }
 }
 
-RPC.prototype.broadcast = function (message) {
-  const peers = this.nodes.toArray()
+RPC.prototype.broadcast = function (message, peers) {
+
+  function getRandomPeers(count, avaliblePeers) {
+    if (avaliblePeers.length <= count) return avaliblePeers
+
+    const randomPeers = []
+    while(count-- > 0 && avaliblePeers.length > 0) {
+      const rnd = Math.floor(Math.random() * avaliblePeers.length)
+      const peer = avaliblePeers[rnd]
+      avaliblePeers.splice(rnd, 1)
+      randomPeers.push(peer)
+    }
+    return randomPeers
+  }
+
   if (!message.mid) message.mid = uuidv4()
   message.id = this.id
-  for (let i = 0; i < K && i < peers.length; ++i) {
-    const rnd = Math.floor(Math.random() * peers.length)
-    const peer = peers[rnd]
-    this.socket.notify(peer, message)
+  peers = Array.isArray(peers) && peers.length > 0 ? peers : getRandomPeers(K, this.nodes.toArray())
+  for(let peer of peers) {
+     this.socket.notify(peer, message)
   }
 }
 

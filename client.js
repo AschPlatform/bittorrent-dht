@@ -15,8 +15,10 @@ var records = require('record-cache')
 var low = require('last-one-wins')
 
 var ROTATE_INTERVAL = 5 * 60 * 1000 // rotate secrets every 5 minutes
-var BUCKET_OUTDATED_TIMESPAN = 15 * 60 * 1000 // check nodes in bucket in 15 minutes old buckets
+var BUCKET_OUTDATED_TIMESPAN = 3 * 60 * 1000 // check nodes in bucket in 15 minutes old buckets
 
+var DISCOVER_PEERS_INTERVAL = 30 * 1000 // discover peers 30s
+   
 inherits(DHT, EventEmitter)
 
 function DHT (opts) {
@@ -100,6 +102,8 @@ function DHT (opts) {
   }
 
   function onbroadcast(message, peer) {
+    self._debug('broadcast from %s', peer.id, `${peer.address}:${peer.port}`)
+
     self.emit('broadcast', message, { host: peer.address, port: peer.port })
   }
 
@@ -126,6 +130,86 @@ function DHT (opts) {
   function onremove(id, reason) {
     self.emit('remove', id.toString('hex'), reason)
   }
+
+  setInterval(this._discoverPeers.bind(this), DISCOVER_PEERS_INTERVAL)
+}
+
+DHT.prototype._formatNode = function (node) {
+  if (!node) return ""
+  const nodeId = Buffer.isBuffer(node.id) ? node.id.toString('hex'): ''
+  return `${nodeId}@${node.host||node.address}:${node.port}`
+}
+
+DHT.prototype._discoverPeers = function() {
+  const self = this
+
+  const target = randombytes(20)
+  const message = {
+    q: 'find_node',
+    a: {
+      id: self._rpc.id,
+      token: null, // queryAll sets this
+      target: target
+    }
+  }
+  const visitedAddress = new Set()
+  
+  function findNodes( node ) {
+    const address = `${node.host}:${node.port}`
+    if (visitedAddress.has(address)) return 
+
+    markVisited(node)
+    self._debug('discovery peers from %s',  self._formatNode(node))
+    self._rpc.query(node, message, done)
+  }
+
+  function markVisited(node) {
+    const address = `${node.host}:${node.port}`
+    if (!visitedAddress.has(address)) visitedAddress.add(address)
+  }
+
+  function done (err, res, peer) {
+    if (err) {
+      self._debug('discovery peers failed from %s, ',self._formatNode(peer), err)
+      return 
+    }
+
+    const nodes = res.r.nodes ? parseNodes(res.r.nodes, self._hashLength) : []
+    for(let node of nodes) {
+      if ( !self.nodes.get(node.id)) {
+        self.addNode({host: node.host, port: node.port})
+      }
+      findNodes(node)
+    }
+  }
+
+  function parseNodes (buf, idLength) {
+    var contacts = []
+  
+    try {
+      for (var i = 0; i < buf.length; i += (idLength + 6)) {
+        var port = buf.readUInt16BE(i + (idLength + 4))
+        if (!port) continue
+        contacts.push({
+          id: buf.slice(i, i + idLength),
+          host: parseIp(buf, i + idLength),
+          port: port,
+          distance: 0,
+          token: null
+        })
+      }
+    } catch (err) {
+      // do nothing
+    }
+  
+    return contacts
+  }
+
+  const nodes = self.nodes.toArray()
+  for( let node of nodes ) {
+    findNodes(node)
+  }
+
 }
 
 DHT.prototype._setBucketCheckInterval = function () {
@@ -135,8 +219,9 @@ DHT.prototype._setBucketCheckInterval = function () {
   this._runningBucketCheck = true
   queueNext()
 
-  function checkBucket () {
+  function checkBucket () {  
     const diff = Date.now() - self._rpc.nodes.metadata.lastChange
+    self._debug('check bucket, diff = %d, ', diff, diff >= self._bucketOutdatedTimeSpan ? 'check': 'ignore')
 
     if (diff < self._bucketOutdatedTimeSpan) return queueNext()
 
@@ -185,6 +270,7 @@ DHT.prototype._checkAndRemoveNodes = function (nodes, cb) {
 DHT.prototype._checkNodes = function (nodes, force, cb) {
   var self = this
 
+  self._debug('check nodes count = %d', nodes.length)
   test(nodes)
 
   function test (acc) {
@@ -192,6 +278,7 @@ DHT.prototype._checkNodes = function (nodes, force, cb) {
 
     while (acc.length) {
       current = acc.pop()
+      self._debug('check node at %s ', self._formatNode(current))
       if (!current.id || force) break
       if (Date.now() - (current.seen || 0) > 10000) break // not pinged within 10s
       current = null
@@ -233,6 +320,7 @@ DHT.prototype.removeNode = function (id) {
 DHT.prototype._sendPing = function (node, cb) {
   var self = this
   var expectedId = node.id
+  this._debug('send ping to %s ', self._formatNode(node))
   this._rpc.query(node, {q: 'ping'}, function (err, pong, node) {
     if (err) return cb(err)
     if (!pong.r || !pong.r.id || !Buffer.isBuffer(pong.r.id) || pong.r.id.length !== self._hashLength) {
@@ -487,8 +575,8 @@ DHT.prototype.lookup = function (infoHash, cb) {
   return function abort () { aborted = true }
 }
 
-DHT.prototype.broadcast = function (message) {
-  this._rpc.broadcast(message)
+DHT.prototype.broadcast = function (message, peers) {
+  this._rpc.broadcast(message, peers)
 }
 
 DHT.prototype.address = function () {
@@ -519,7 +607,7 @@ DHT.prototype.destroy = function (cb) {
 
 DHT.prototype._onquery = function (query, peer) {
   var q = query.q.toString()
-  this._debug('received %s query from %s:%d', q, peer.address, peer.port)
+  this._debug('received %s query from %s', q, this._formatNode(peer))
   if (!query.a) return
 
   switch (q) {
@@ -699,7 +787,6 @@ DHT.prototype._closest = function (target, message, onmessage, cb) {
   function done (err, n) {
     if (err) return cb(err)
     self._tables.set(target.toString('hex'), table)
-    self._debug('visited %d nodes', n)
     cb(null, n)
   }
 
@@ -707,7 +794,7 @@ DHT.prototype._closest = function (target, message, onmessage, cb) {
     if (!message.r) return true
 
     if (message.r.token && message.r.id && Buffer.isBuffer(message.r.id) && message.r.id.length === self._hashLength) {
-      self._debug('found node %s (target: %s)', message.r.id, target)
+      self._debug('found target %s from node %s', target, this._formatNode(node) )
       table.add({
         id: message.r.id,
         host: node.host || node.address,
