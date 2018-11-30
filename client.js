@@ -26,7 +26,6 @@ function DHT (opts) {
   if (!(this instanceof DHT)) return new DHT(opts)
   if (!opts) opts = {}
 
-  debug.enabled = true
   var self = this
 
   this._tables = LRU({maxAge: ROTATE_INTERVAL, max: opts.maxTables || 1000})
