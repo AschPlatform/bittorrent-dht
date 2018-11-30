@@ -17,7 +17,8 @@ var low = require('last-one-wins')
 var ROTATE_INTERVAL = 5 * 60 * 1000 // rotate secrets every 5 minutes
 var BUCKET_OUTDATED_TIMESPAN = 3 * 60 * 1000 // check nodes in bucket in 15 minutes old buckets
 
-var DISCOVER_PEERS_INTERVAL = 30 * 1000 // discover peers 30s
+var DISCOVER_PEERS_INTERVAL = 60 * 1000 // discover peers 60s
+var DISCOVER_PEERS_TIMEOUT = 50 * 1000  
    
 inherits(DHT, EventEmitter)
 
@@ -25,6 +26,7 @@ function DHT (opts) {
   if (!(this instanceof DHT)) return new DHT(opts)
   if (!opts) opts = {}
 
+  debug.enabled = true
   var self = this
 
   this._tables = LRU({maxAge: ROTATE_INTERVAL, max: opts.maxTables || 1000})
@@ -153,33 +155,48 @@ DHT.prototype._discoverPeers = function() {
     }
   }
   const visitedAddress = new Set()
+  const addedAddress = new Set()
+  const nodesQueue = []
+  const startTime = Date.now()
+
+  let discoveryTimer = null
   
   function findNodes( node ) {
     const address = `${node.host}:${node.port}`
-    if (visitedAddress.has(address)) return 
+    if (visitedAddress.has(address)) {
+      self._debug('peer %s visited already', address)
+      return
+    } 
 
-    markVisited(node)
-    self._debug('discovery peers from %s',  self._formatNode(node))
+    self._debug('discover peers from %s',  self._formatNode(node))
     self._rpc.query(node, message, done)
-  }
 
-  function markVisited(node) {
-    const address = `${node.host}:${node.port}`
-    if (!visitedAddress.has(address)) visitedAddress.add(address)
+    visitedAddress.add(address)
   }
 
   function done (err, res, peer) {
     if (err) {
-      self._debug('discovery peers failed from %s, ',self._formatNode(peer), err)
+      self._debug('discover peers failed from %s, ',self._formatNode(peer), err.code)
+      
+      const hasPeerNode = (peer && peer.id && self.nodes.get(peer.id))
+      if (hasPeerNode && (err.code === 'EUNEXPECTEDNODE' || err.code === 'ETIMEDOUT')) {
+        self.removeNode(peer.id, err)
+      }
       return 
     }
 
     const nodes = res.r.nodes ? parseNodes(res.r.nodes, self._hashLength) : []
     for(let node of nodes) {
-      if ( !self.nodes.get(node.id)) {
+      const address = `${node.host}:${node.port}`
+      if ( !(self.nodes.get(node.id) || addedAddress.has(address)) ) {
+        addedAddress.add(address)
         self.addNode({host: node.host, port: node.port})
       }
-      findNodes(node)
+
+      if (!visitedAddress.has(address)) {
+        visitedAddress.add(address)
+        nodesQueue.push(node)
+      }
     }
   }
 
@@ -205,11 +222,44 @@ DHT.prototype._discoverPeers = function() {
     return contacts
   }
 
-  const nodes = self.nodes.toArray()
-  for( let node of nodes ) {
-    findNodes(node)
+  function startDiscover() {
+    let queueEmptyAt = undefined
+    self._debug('start to discover peers')
+    discoveryTimer = setInterval(()=> {
+      let finished = false
+      const now = Date.now()
+      if (nodesQueue.length === 0) {
+        queueEmptyAt = queueEmptyAt || now 
+        finished = (now - queueEmptyAt >= 5000)
+      } else {
+        queueEmptyAt = undefined
+      }
+
+      finished = finished || (now - startTime >= DISCOVER_PEERS_TIMEOUT) 
+      if (finished) {
+        clearInterval(discoveryTimer)
+        self._debug('peers discovery round finished')
+        return 
+      }
+
+      let node = undefined
+      while( (node = nodesQueue.shift()) !== undefined ) {
+        const address = `${node.host}:${node.port}`
+        if (!visitedAddress.has(address)) break
+      } 
+
+      if (node) findNodes(node)
+    }, 50)
   }
 
+  const nodes = self.nodes.toArray()
+  nodes.forEach(node => {
+    const address = `${node.host}:${node.port}`
+    if (!addedAddress.has(address)) addedAddress.add(address) 
+  })
+
+  nodesQueue.push(...nodes)
+  startDiscover()
 }
 
 DHT.prototype._setBucketCheckInterval = function () {
