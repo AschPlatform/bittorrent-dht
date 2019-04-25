@@ -54,11 +54,13 @@ function DHT (opts) {
   this._runningBucketCheck = false
   this._bucketCheckTimeout = null
   this._bucketOutdatedTimeSpan = opts.timeBucketOutdated || BUCKET_OUTDATED_TIMESPAN
+  this._failedTimes = new Map()
 
   this.listening = false
   this.destroyed = false
   this.nodeId = this._rpc.id
   this.nodes = this._rpc.nodes
+  
 
   // ensure only *one* ping it running at the time to avoid infinite async
   // ping recursion, and make the latest one is always ran, but inbetween ones
@@ -315,8 +317,15 @@ DHT.prototype.updateBucketTimestamp = function () {
 DHT.prototype._checkAndRemoveNodes = function (nodes, cb) {
   var self = this
 
-  this._checkNodes(nodes, true, function (_, node) {
-    if (node) self.removeNode(node.id)
+  this._checkNodes(nodes, true, function (err, node) {
+    if (node) {
+      const address = `${node.host}:${node.port}`
+      const failInfo = self._failedTimes.get(address)
+      if (failInfo && failInfo.times && failInfo.times > 2) {
+        self.removeNode(node.id, `Check failed 3 times, last error is ${err}`)
+        self._failedTimes.delete(address)
+      }
+    }
     cb(null, node)
   })
 }
@@ -341,11 +350,18 @@ DHT.prototype._checkNodes = function (nodes, force, cb) {
     if (!current) return cb(null)
 
     self._sendPing(current, function (err) {
+      const address = `${current.host}:${current.port}`
       if (!err) {
         self.updateBucketTimestamp()
+        self._failedTimes.delete(address)
         return test(acc)
       }
-      cb(null, current)
+
+      if (!self._failedTimes.has(address)) {
+        self._failedTimes.set(address, { times: 0 })
+      }
+      self._failedTimes.get(address).times++
+      cb(err, current)
     })
   }
 }
@@ -370,8 +386,8 @@ DHT.prototype.addNode = function (node) {
   })
 }
 
-DHT.prototype.removeNode = function (id) {
-  this._rpc.removeNode(toBuffer(id))
+DHT.prototype.removeNode = function (id, reason) {
+  this._rpc.removeNode(toBuffer(id), reason)
 }
 
 DHT.prototype._sendPing = function (node, cb) {
